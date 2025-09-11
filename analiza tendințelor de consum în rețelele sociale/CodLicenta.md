@@ -32,8 +32,7 @@ summary(actint)
 #Se observa indici a caror medii depasesc 60-70% ceea ce indica multe tari cu un nivel ridicat al acelui indice
 #De asemenea insa avem medii scazute pe indici cum ar fi informarea cu privire la bunuri si servicii , vinderea de produse
 #informarea cu privire la continutul de pe internet. Lucru ca ne indica faptul ca desi majoritatea tarilor sunt active in mediul social , sunt slab
-#educate cu privire la mediul virtual . Se observa diferente mari intre minimul si maximul indicilor , amplitudinea fiind in unele cazuri
-# si de 65
+#educate cu privire la mediul virtual . Se observa diferente mari intre minimul si maximul indicilor , amplitudinea fiind in unele cazuri si de 65
 #Se observa faptul ca media > mediana in cazul indicilor de consum si activitate , insa mai mica pentru indicii
 #legati de informare si educatie digitala
 act_sd<-sd(actint$pers.active.sm)
@@ -220,9 +219,7 @@ scoruri1
 Scoruri_finale<-cbind(scoruri,scoruri1)
 Scoruri_finale
 
-
 # Ward.D2 -----------------------------------------------------------------
-
 
 d <- dist(Scoruri_finale)
 ierarhie <- hclust(d,method="ward.D2")
