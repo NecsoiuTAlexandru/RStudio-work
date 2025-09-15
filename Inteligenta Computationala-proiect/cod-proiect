@@ -1,0 +1,450 @@
+# Proiect ICE -------------------------------------------------------------
+
+Banca<-read.csv(file = "banca1.csv", header = TRUE, sep = ",")
+str(Banca)
+
+Banca_echil<-read.csv(file="Date_Credit_Echilibrate.csv" , header=T ,sep=",")
+
+#Ambele seturi de date au aceeasi indici si nr de variabile(persoane).
+#Al doilea mi se pare mai echilibrat din punctul meu de vedere .Primul este realizat in SQL iar al doi-lea in Chat GPT
+#Datele sunt unele fictive , de aceea este posibil ca unele modele sa nu aiba rezultate tocmai satisfacatoare
+#Pentru jumatete din proiect am folosit primul set de date , iar pentru al doi-lea un alt set de date
+
+#Indici:
+#-VENIT=Venitul lunar al fiecarei persoane care vrea sa aplice pentru un credit
+#-DATORII=Numarul de datorii curente pe care le au la Banci
+#-DOBANDA=Dobanda pe care o au pe perioada achitarii creditului
+#-PERIOADA_CREDITULUI=Perioada de plata a creditului (ani)
+#-SUMA_CREDIT=Valoarea creditului (in functie de VENIT)
+#-APROBARE_CREDIT=Y-aprobat,N-Nu este aprobat
+#-TIP_CREDIT=Tipurile de credit acordate(Auto,Investii,Ipotecar,Nevoi personale,Renovari,Studii)
+
+library(caTools)
+library(nnet)
+library(moments)
+library(e1071)
+library(cluster)
+library(factoextra)
+library(ISLR)
+library(caret)
+library(pROC)
+library(ROCR)
+library(MASS)
+library(rpart)
+library(rpart.plot)
+library(class)
+
+
+#install.packages("caTools")
+#install.packages("neuralnet")
+#install.packages("rpart")
+#install.packages("mlbench")
+#install.packages("VGAM") 
+#install.packages("ggplot2")
+#install.packages("ISLR")
+#install.packages("caret")
+#install.packages("pROC")
+#install.packages("e1071")
+#install.packages("cluster")
+#install.packages("factoextra")
+#install.packages("MASS")	
+#install.packages("ROCR")
+#install.packages("rpart.plot")
+#install.packages("class")
+
+#Statistici descriptive pentru valorile numerice
+summary(Banca) 
+
+sd_venit<-sd(Banca$VENIT)
+sd_datorii<-sd(Banca$DATORII)
+sd_dobanda<-sd(Banca$DOBANDA)
+sd_prcreditului<-sd(Banca$PERIOADA_CREDITULUI)
+sd_sumacredit<-sd(Banca$SUMA_CREDIT)
+
+
+sk_venit<-skewness(Banca$VENIT)#asimetrica putin la dreapta,majoritatea valorilor sunt concentrate pe partea stângă.
+sk_datorii<-skewness(Banca$DATORII)#asimetrica putin la dreapta,majoritatea valorilor sunt concentrate pe partea stângă.
+sk_dobanda<-skewness(Banca$DOBANDA)#asimetrica foarte mare la  dreapta,majoritatea valorilor sunt concentrate pe partea stângă.
+sk_prcredit<-skewness(Banca$PERIOADA_CREDITULUI)#asimetrica putin la dreapta,majoritatea valorilor sunt concentrate pe partea stângă.
+sk_suma_credit<-skewness(Banca$SUMA_CREDIT)#asimetrica putin la dreapta,majoritatea valorilor sunt concentrate pe partea stângă.
+
+k_venit<-kurtosis(Banca$VENIT)
+k_datorii<-kurtosis(Banca$DATORII)
+k_dobanda<-kurtosis(Banca$DOBANDA)
+k_prcreditului<-kurtosis(Banca$PERIOADA_CREDITULUI)
+k_sumacredit<-kurtosis(Banca$SUMA_CREDIT)
+#toate k<3 ceea ce indica o boltire la stanga , platicurtica+negativa
+
+amp_venit<-max(Banca$VENIT)-min(Banca$VENIT)
+amp_datorii<-max(Banca$DATORII)-min(Banca$DATORII)
+amp_dobanda<-max(Banca$DOBANDA)-min(Banca$DOBANDA)
+amp_prcredit<-max(Banca$PERIOADA_CREDITULUI)-min(Banca$PERIOADA_CREDITULUI)
+amp_sumacredit<-max(Banca$SUMA_CREDIT)-min(Banca$SUMA_CREDIT)
+
+# Clusterizare fuzzy ------------------------------------------------------
+
+
+date1<-Banca[,-c(1,3,9,10)]
+date_Std = scale(date1, center = T, scale = T)
+cluster<-cmeans(date_Std,centers=2,iter.max=100,m=2, method="cmeans")   
+cluster
+#Clusterul 1 include clienți mai în vârstă, cu venituri mai mari, care accesază
+#sume mari pe perioade mai lungi, dar primesc dobânzi mai mici — probabil datorită bonității
+#mai bune sau stabilității financiare. Aceștia ar putea reprezenta un segment premium sau fidelizat.
+
+#Clusterul 2 conține clienți tineri, cu venituri mici și sume de credit reduse, dar dobânzi mai mari
+#și termene scurte. Aceștia sunt clienți mai riscanți sau fără istoric solid de creditare — posibil prima 
+#accesare de credit sau din medii instabile.
+date1$cluster <- cluster$cluster
+
+plot(date1$VENIT, date1$DATORII, col = date1$cluster, pch = 19, main = "Clusterizare Fuzzy C-Means")
+points(cluster$centers[, c(1, 2)], col = 1:3, pch = 8, cex = 2)
+text(x=date1$VENIT, y=date1$DATORII, labels=Banca$ID, col=date1$cluster)
+#Putem observa faptul ca persoanele cu cat au venituri mai mari , cu atat datoria lor este mai mare , insa raportat la venit si datorii
+#Veniturile sunt mult mai mari comparativ cu datoriile , punctele negre reprezinta astel persoanele mai bogate
+plot(date1$VENIT, date1$DOBANDA, col = date1$cluster, pch = 19, main = "Clusterizare Fuzzy C-Means")
+points(cluster$centers[, c(1, 2)], col = 1:3, pch = 8, cex = 2)
+text(x=date1$VENIT, y=date1$DOBANDA, labels=Banca$ID, col=date1$cluster)
+#persoane cu venituri ridicate pot avea datorii mici sau mari, la fel ca și cele cu venituri scăzute. 
+plot(date1$DOBANDA, date1$PERIOADA_CREDITULUI, col = date1$cluster, pch = 19, main = "Clusterizare Fuzzy C-Means")
+points(cluster$centers[, c(1, 2)], col = 1:3, pch = 8, cex = 2)
+text(x=date1$DOBANDA, y=date1$PERIOADA_CREDITULUI, labels=Banca$ID, col=date1$cluster)
+#Pare ca persoanele mai bogate fac credite pe un timp mai lung decat cele mai sarace
+plot(date1$SUMA_CREDIT, date1$DOBANDA, col = date1$cluster, pch = 19, main = "Clusterizare Fuzzy C-Means")
+points(cluster$centers[, c(1, 2)], col = 1:3, pch = 8, cex = 2)
+text(x=date1$SUMA_CREDIT, y=date1$DOBANDA, labels=Banca$ID, col=date1$cluster)
+#Putem observa insa ca persoanele mai bogate tind sa aiba dobanzi mai mici , creditele fiind facute pe un timp mai lung
+
+
+o<-order(cluster$cluster)
+rep_cluster<-data.frame(Banca$ID[o],cluster$clust)
+res.fanny <- fanny(date1, 2)
+res.fanny$coeff
+
+fviz_cluster(res.fanny, ellipse.type = "norm", repel = TRUE, palette = "jco", ggtheme = theme_minimal(), legend = "right")
+#Cluster 1: clienți maturi, stabili financiar, credite mari și avantajoase
+#Cluster 2: clienți mai tineri sau instabili, cu credite mici și costuri mai mari
+#Banca ar putea adapta ofertele în funcție de aceste profiluri: cross-selling pentru clienții din Cluster 1 și strategii de retenție sau educație pentru cei din Cluster 2.
+fviz_silhouette(res.fanny, palette = "jco", ggtheme = theme_minimal())
+#primul cluster este format din 66 de persoane iar al doilea din 34 , cl1 explica 56% model iar cl2 explica 67% din model
+#Putem spune ca clusterizarea este acceptabila 
+
+
+# Regresie Logistica ------------------------------------------------------
+
+
+Banca$APROBARE_CREDIT <- ifelse(Banca$DATORII < 1800, 1,
+                                ifelse(Banca$APROBARE_CREDIT == "Y", 1, 0))
+Banca$APROBARE_CREDIT <-as.factor(Banca$APROBARE_CREDIT)
+table(Banca$APROBARE_CREDIT)
+set.seed(123)
+index <- createDataPartition(Banca$APROBARE_CREDIT, p = 0.8, list = FALSE)
+trainData <- Banca[index, ]
+testData <- Banca[-index, ]
+
+model <- glm(APROBARE_CREDIT ~ VENIT + DATORII + SUMA_CREDIT +  PERIOADA_CREDITULUI,
+             data = trainData,
+             family = binomial)
+
+summary(model)
+coeficienti_model <- coef(model)
+coeficienti_model
+odds_ratios <- exp(coeficienti_model)
+print(odds_ratios)
+#Creșterea venitului cu o unitate reduce foarte puțin probabilitatea de aprobare (cu ~0.4%).
+#O creștere a datoriilor reduce șansa de aprobare cu aproximativ 52% 
+#	Efect aproape nul – suma creditului influențează foarte puțin aprobarea.
+#O perioadă mai lungă a creditului scade șansa de aprobare cu 80%.
+#Pentru outputul care mi a dat mie
+
+prob <- predict(model, newdata = testData, type = "response")
+prob
+pred<-rep("0", dim(trainData)[1])
+pred[testData$DATORII < 1800] <- "1"
+pred
+table(pred, trainData$APROBARE_CREDIT)
+#Nr persoane aprobate=14+50=64 , din 52 de persoane 14 au fost clasificate gresit iar 50 au fost clasificate corect
+#Nr persoane neaprobate=15+2=17 , din 17 de persoane 15 au fost clasificat corect ca fiind respinsi iar 2 au fost clasificati gresit
+#52 de clasificari corecte
+acr<-(49+4)/(4+8+19+49)*100
+#66% din elemente au fost corect prezise
+
+#labels <- as.numeric(as.character(testData$APROBARE_CREDIT))
+
+p<-predict(model, newdata=testData, type="response")
+pr<-prediction(p, testData$APROBARE_CREDIT)
+prf<-performance(pr, measure="tpr", x.measure="fpr")
+plot(prf)
+
+auc<-performance(pr, measure="auc")
+auc<-auc@y.values[[1]]
+auc
+#observam ca coef auc este de 100% , adica modelul este foarte sigur
+#Obs:Modelul pare sa fie prea perfect ca sa fie bun , probabil exista o eroare dar nu stiu care e
+
+###Modelul 2####
+
+Banca$TIP_CREDITfact<-factor(Banca$TIP_CREDIT)
+Banca$out<-relevel(Banca$TIP_CREDITfact, ref="Nevoi_personale")
+#install.packages("nnet")
+model2<-multinom(out~MEDIU+PERIOADA_CREDITULUI, data=Banca, trace=FALSE)
+summary(model2)
+exp(coef(model2))
+#In mediul Urban sunt cu 1,3% sanse ca un om sa ia un credit auto  vs cel de nevoi personale, fiind de asemenea sanse de 9% sa ia un credit auto cand perioada creste cu 1
+#sunt sanse de 387% ca cineva sa ia un credit de Investitii vs cel de nevoi personale ceea ce este extrem de sigur , fiind de asemenea sanse de 1% sa ia un credit de tip Investitii cand perioada creste cu 1
+#sunt sanse de 19% sa ia un credit Ipotecar vs Nevoi Personale , fiind de asemenea sanse cresucte de a lua un credit ipotecar cand perioada de creditare creste cu 1 u.m
+#sunt sanse de 5% sa ia un credit Personal vs Nevoi Personale , fiind de asemenea sanse crescute de 6,1% sa ia un credit Personal cu cresterea timpului de creditare cu 1
+#sanse de 20% sa ia credit de renovari vs nevoi personale , sansa scazde insa cu 2% cu trecerea timpului de creditare cu 1 u.m
+#sanse de 36% sa ia un credit de nevoi personale vs studii , sansa creste insa cu 5,5% cu trecerea perioadei de creditare cu 1 u.m
+predict(model2, Banca)
+#primul creditant ia credit de Renovare , urmatorul Auto etc.
+predict(model2, Banca, type="prob")
+#prima pers are sanse de 26% sa ia credit de nevoi personale , 8% sa ia creditul auto , 7% sa ia creditul de inv
+# 7% sa ia creditul ipotecat , 9,8% sa ia creditul Personal , 28,9% sa ia creditul de renovare,11,9$ sa ia credit de Studii
+predict(model2, Banca[c(1, 20, 50),], type="prob")
+
+matriceconfuzie<-table(Banca$TIP_CREDITfact, predict(model2))
+matriceconfuzie
+mean(Banca$TIP_CREDITfact==predict(model2))
+#Avem 5 perosane bine clasificare la creditul de nevoi personale ,14 la cel auto , 4 la cel de investitii,5 la renovare
+#Rata de acuratete este 28% , ceea ce este destul de slab
+
+
+# Arborele de decizie -----------------------------------------------------
+Banca_Arbore<-Banca[,-c(1,9)]
+range(Banca_Arbore$PERIOADA_CREDITULUI )
+set.seed(123)
+hist(Banca_Arbore$PERIOADA_CREDITULUI , main="Histograma Datorii creditanti" , xlab="Datorii" , col="darkred")
+#Observam ca frecventa cea mai mare de preturi  esgte intre 500 si 1000 de euro , peste 30 de persoane care se afla
+# in acest interval de datorii , putem presupune ca sunt persoane care nu au un venit foarte mare , date fiind datoriile mici
+Banca_Arbore$High<-ifelse(Banca_Arbore$PERIOADA_CREDITULUI>20,"Yes","No")
+Banca_Arbore$PERIOADA_CREDITULUI<-NULL
+antrenare<-sample(1:nrow(Banca_Arbore), nrow(Banca_Arbore)/2)
+setantrenare<-Banca_Arbore[antrenare,]
+setantrenare
+settestare<-Banca_Arbore[-antrenare,]
+settestare
+arbore<-rpart(setantrenare$High~. , data=setantrenare, method="class")
+
+plot(arbore)
+text(arbore, pretty=0)
+#Putem observa ca persoanele peste 28 ani ,cu venituri sub 14895 , primesc sume de credite mici in functie de mediu (rural)
+rpart.plot(arbore, extra= 106)
+print(arbore)
+
+#Dacă dobânda este ridicată (≥ 3.465%), banca tinde să acorde sume mai mici de credit.
+#Venit mare (≥ 10.442 RON) → în 93% din cazuri, clientul a primit un credit mare.
+#Venit mic (< 10.442 RON) → chiar dacă dobânda este mică, șansele de a primi un credit mare sunt sub 50%.
+#obânzile mari elimină practic șansa acordării unui credit mare.
+#În condiții de dobândă mică, venitul ridicat devine factorul cheie care determină dacă un client primește un credit mare.
+#Acest model reflectă o abordare prudentă a băncii, care acordă sume mari doar în condiții de risc scăzut și capacitate financiară dovedită
+predictie<-predict(arbore, settestare, type="class")
+confuzie<-table(settestare$High, predictie)
+confuzie
+#dintre 50 de regiuni cu credite sub 20000 , 36 au fost corect previzionate si 14 nu
+#3 persoane cu credite peste 20000 21 au fost previz corect si 12 gresit
+mean(predictie!=settestare$High)
+#coeficientul de eroare este de 16% , ceea ce este relativ bine
+predictie1<-predict(arbore, settestare, type="prob")
+predictie1
+
+curbaroc<-roc(settestare$High, predictie1[,"Yes"])
+plot(curbaroc)
+auc(curbaroc)
+#Clasificatorul poate distinge in prop de 89,7% inre valori mici si mari
+plotcp(arbore)
+mincp<-arbore$cptable[which.min(arbore$cptable[,"xerror"]),"CP"]
+mincp
+printcp(arbore)
+#Arborele complet are 2 splituri, deci 3 noduri terminale.
+#Eroarea pe antrenare a scăzut de la 1.00 la 0.40 (s-a redus cu 60%).
+#Totuși, eroarea de validare încrucișată (xerror) rămâne destul de ridicată (0.90), ceea ce poate indica supraînvățare 
+#(overfitting) sau un set de date insuficient pentru generalizare bună.
+#Cel mai bun echilibru între performanță și complexitate pare la nsplit = 1, unde xerror = 0.70 este cea mai mică.
+
+arbore1<-prune(arbore, cp=arbore$cptable[which.min(arbore$cptable[,"xerror"]),"CP"])
+rpart.plot(arbore1, extra= 106)
+predictie2<-predict(arbore1, settestare, type="class")
+predictie2
+confuzie<-table(settestare$High, predictie2)
+confuzie
+#Avem 89,7% valori bine clasificate 
+mean(predictie2!=settestare$High)
+#Eroarea de clasificare a crescut  de la 16% la 20%
+
+predictie3<-predict(arbore1, settestare, type="prob")
+predictie3
+curbaroc1<-roc(settestare$High, predictie3[,"Yes"])
+plot(curbaroc1)
+auc(curbaroc1)
+#Aria de sub curba -Capacitatea de clasificare a claselor 84,8%
+#Modelul este destul destul de solid
+#Putem observa ca dupa curatare eroarea de clasificare a crescut de la 16% la 20% iar capacitatea de clasificare a claselor a scazut de la 89,7% la 84,8%
+#Putem concluziona faptul ca modelul initial (cel de dinaintea curatarii) e mai eficient in prezicerea acordarii sumelor de credit 
+
+# KNN de clasificare ------------------------------------------------------
+##MODELUL 1 , APROBARE CREDIT ####
+
+
+Banca2<-Banca_echil[1:9]
+set.seed(101)
+
+Banca2$MEDIU<-as.factor(Banca2$MEDIU)
+
+Banca2$APROBARE_CREDIT<-as.factor(Banca2$APROBARE_CREDIT)
+
+index<-sample(2, nrow(Banca2), replace=TRUE, prob=c(0.7, 0.3))
+index
+
+setantrenare<-Banca2[index==1,]
+setantrenare
+
+settestare<-Banca2[index==2,]
+settestare
+
+levels(setantrenare$APROBARE_CREDIT) <- make.names(levels(factor(setantrenare$APROBARE_CREDIT)))
+levels(settestare$APROBARE_CREDIT) <- make.names(levels(factor(settestare$APROBARE_CREDIT)))
+
+levels(setantrenare$MEDIU) <- make.names(levels(factor(setantrenare$MEDIU)))
+levels(settestare$MEDIU) <- make.names(levels(factor(settestare$MEDIU)))
+
+x <- trainControl(method = "repeatedcv",  number = 10,repeats =3, classProbs = TRUE, summaryFunction = twoClassSummary)
+model1 <- train(APROBARE_CREDIT ~ .,
+                data = setantrenare,
+                method = "knn",
+                preProcess = c("center", "scale"),
+                trControl = x,
+                metric = "ROC",
+                tuneLength = 10)
+model1
+#k reprezinta numarul celor mai apropiati vecini ai unei observatii; 
+#Am 8 predictori (variabile independente)
+#Am folosit validare încrucișată 10-fold repetată de 3 ori.
+#Cea mai mare val de sub curba este 0,907(ROC) ceea ce inseamna ca modelul pare destul de eficient
+
+plot(model1)
+valid_pred <- predict(model1,settestare, type = "prob")
+pred_val <-prediction(valid_pred[,2],settestare$APROBARE_CREDIT)
+perf_val <- performance(pred_val,"auc")	
+perf_val	
+
+perf_val <- performance(pred_val, "tpr", "fpr")
+plot(perf_val, col = "green", lwd = 1.5)
+#Se pbserva cum curba de fals pozitiv creste extrem de repede
+
+auc<-performance(pred_val, measure="auc")
+auc<-auc@y.values[[1]]
+auc
+#Putem observa ca coef de predictibilitate este de 80% , ceea ce ne arata ca modelul nostru este foarte bun
+
+
+###MODELUL 2 MEDIU###
+
+
+x1<- trainControl(method = "repeatedcv",  number = 10,repeats =3, classProbs = TRUE, summaryFunction = twoClassSummary)
+model2 <- train(MEDIU ~ .,
+                data = setantrenare,
+                method = "knn",
+                preProcess = c("center", "scale"),
+                trControl = x1,
+                metric = "ROC",
+                tuneLength = 10)
+model2
+#Cea mai mare val de sub curba este 0,615 ceea ce inseamna ca modelul este mai putin adecvat decat primul
+
+plot(model2)
+valid_pred1 <- predict(model2,settestare, type = "prob")
+pred_val1 <-prediction(valid_pred1[,2],settestare$MEDIU)
+
+#Calculul ariei de sub curba ROC:
+perf_val1 <- performance(pred_val1,"auc")	
+perf_val1
+
+perf_val1 <- performance(pred_val1, "tpr", "fpr")
+plot(perf_val1, col = "green", lwd = 1.5)
+#Putem observa ca curba de fals poziti nu are o crestere oarecum brusca , semn ca rata de fals poziti este relativ de mare (modelul nu a identificat bine prezicerile de noi val)
+
+auc1<-performance(pred_val1, measure="auc")
+auc1<-auc1@y.values[[1]]
+auc1
+#Putem observa ca modelul pentru separarea claselor Rural/Urban are o eficienta de 60% ,ceea ce ne indica
+#faptul ca modelul este putin slabut
+
+
+
+Banca_echil2<-Banca_echil[,-c(1,2,3,6,7,9)]
+set.seed(123)
+#Se extrag doua esantioane, corespunzatoare setului de antrenare (80% din date) si setului de testare (20%).
+ind<-sample(2, nrow(Banca_echil2), replace=TRUE, prob=c(0.80,0.20))
+ind
+
+#Setul de antrenare:
+antrenare<-Banca_echil2[ind==1,1:2]
+dim(antrenare)[1] #setul de antrenare contine 82 observatii
+antrenare
+
+#Setul de testare:
+testare<-Banca_echil2[ind==2,1:2]
+dim(testare)[1]#setul de antrenare contine 18 obs
+testare
+
+#Etichetele celor 2 seturi:
+
+etichetaantrenare<-Banca_echil2[ind==1,3]
+etichetaantrenare
+
+etichetatestare<-Banca_echil2[ind==2,3]
+etichetatestare
+
+#Se fixeaza cei mai apropiati 3 vecini ai oricarui obiect: k=3:
+predictie<-knn(train=antrenare, test=testare, cl=etichetaantrenare, k=3)
+predictie
+
+#Matricea de confuzie:
+tab<-table(true=etichetatestare, pred=predictie)
+tab
+#Avem 16  valori previzionate corect (val de pe diagonala) 11 poz si 4 negative
+
+mean(etichetatestare!=predictie)
+#Avem  83,3% din valori bine clasificate
+#Eroarea de clasificare:16,66%
+
+
+# Retele Neuronale --------------------------------------------------------
+library(neuralnet)
+Banca_echil1<-Banca_echil[,c(1,3,4:8)]
+set.seed(123)
+
+Banca_echil1$APROBARE_CREDIT <- as.numeric(Banca_echil1$APROBARE_CREDIT == "Y")
+
+split <- sample.split(Banca_echil1$APROBARE_CREDIT, SplitRatio = 0.8)
+trainset <- subset(Banca_echil1, split == TRUE)
+testset <- subset(Banca_echil1, split == FALSE)
+
+net <- neuralnet(APROBARE_CREDIT ~ PERIOADA_CREDITULUI+DOBANDA+DATORII+SUMA_CREDIT+VENIT+VARSTA,
+                 data = trainset,
+                 hidden = 5,
+                 linear.output = FALSE,
+                 threshold = 0.1,
+                 lifesign = "minimal")
+
+plot(net, rep = "best")
+#Suma creditului este cel mai restrictiv factor — când crește, probabilitatea de aprobare scade brusc.
+#Venitul este important, dar doar dacă este corelat bine cu suma cerută și datoriile existente.
+#Datoriile nu penalizează puternic — deci se poate aproba un credit și cu datorii, dacă restul e în regulă.
+#Perioada și dobânda contează puțin, fiind probabil corelate cu alte variabile.
+#Vârsta influențează ușor negativ — poate pentru profil de risc crescut la extreme (tineri vs pensionari).
+temp_test <- subset(testset, select = c("DOBANDA","PERIOADA_CREDITULUI","DATORII","SUMA_CREDIT" ,"VARSTA", "DATORII","VENIT"))
+
+results <- compute(net, temp_test)
+results_df <- data.frame(actual = testset$APROBARE_CREDIT, prediction = results$net.result)
+results_df$prediction <- round(results_df$prediction)
+nrow(results_df)
+results_df[1:15,]
+tab <- table(results_df$actual, results_df$prediction)
+print(tab)
+#Modelul nu a ratat niciun caz pozitiv → Recall (sensibilitate) = 100% pentru clasa 1.
+#A făcut 3 erori de tip fals pozitiv, prezicând "credit aprobat" când în realitate nu era.
+classAgreement(tab)
+#Acuratețea: 85% din predicții sunt corecte
+#Kappa: bun (0.6–0.8 înseamnă acord substanțial)
